@@ -1,0 +1,8 @@
+[package]
+name = "practice-ocl"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+anyhow = "1.0.100"
+ocl = "0.19.7"
