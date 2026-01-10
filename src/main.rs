@@ -1,108 +1,127 @@
-extern crate ocl;
 use std::time::Instant;
 
-use ocl::{Buffer, Kernel, MemFlags, ProQue};
-use anyhow::{Context, Result};
+use anyhow::Result;
+use ndarray::Array2;
+use ocl::{Device, Platform, core::DeviceInfo};
+use practice_ocl::{gpu_voxel::OclVoxelContext, operate_pcd_file::{PointXYZT, load_pcd_xyzt}};
 
 
-const WORK_SIZE: usize = 1 << 24;
-const ITERS: usize = 1000;
-const PRINT: usize = 8;
-
-static KERNEL_SRC: &str = r#"
-    __kernel void add(
-        __global const float* a,
-        __global const float* b,
-        __global float* c,
-        uint iters
-    ) {
-        uint idx = get_global_id(0);
-        
-        float ai = a[idx];
-        float bi = b[idx];
-        float x = c[idx];
-
-        for(uint k = 0; k < iters; ++k) {
-            x = fma(bi, x, ai);
-        }
-        c[idx] = x;
-    }
-"#;
+const VOXEL_SIZE: f32 = 0.5;
+const WARMUP_ITERATIONS: usize = 3;
+const BENCHMARK_ITERATIONS: usize = 10;
 
 fn main() -> Result<()> {
-    let pq = ProQue::builder()
-        .src(KERNEL_SRC)
-        .dims(WORK_SIZE)
-        .build()
-        .context("Failed to create Context...")?;
+    check_device_info()?;
 
-    let a = vec![1e-3f32; WORK_SIZE];
-    let b = vec![0.999f32; WORK_SIZE];
-    let mut c = vec![1.0f32; WORK_SIZE];
+    let pcd_path = "data/input/frame_898.pcd";
+    let init_pcd = load_pcd_xyzt(pcd_path)
+        .expect("Failed to load initial PCD file");
 
-    let buf_a = Buffer::<f32>::builder()
-        .queue(pq.queue().clone())
-        .flags(MemFlags::new().read_only())
-        .len(WORK_SIZE)
-        .copy_host_slice(&a)
-        .build()
-        .context("Failed to create buffer A...")?;
+    let init_points = pcd_to_array2(&init_pcd);
 
-    let buf_b = Buffer::<f32>::builder()
-        .queue(pq.queue().clone())
-        .flags(MemFlags::new().read_only())
-        .len(WORK_SIZE)
-        .copy_host_slice(&b)
-        .build()
-        .context("Failed to create buffer B...")?;
+    let mut gpu_voxel = OclVoxelContext::new()
+        .expect("Failed to create OclVoxelContext");
 
-    let buf_c = Buffer::<f32>::builder()
-        .queue(pq.queue().clone())
-        .flags(MemFlags::new().read_write())
-        .len(WORK_SIZE)
-        .copy_host_slice(&c)
-        .build()
-        .context("Failed to create buffer C...")?;
-
-    let kernel = Kernel::builder()
-        .program(&pq.program())
-        .name("add")
-        .queue(pq.queue().clone())
-        .global_work_size(WORK_SIZE)
-        .arg(&buf_a)
-        .arg(&buf_b)
-        .arg(&buf_c)
-        .arg(7 as u32)
-        .build()
-        .context("Failed to create the kernel")?;
-
-    unsafe {
-        kernel.enq()
-            .context("Failed to run the kernel")?;
+    println!("\n=== Warming up ({} iterations) ===", WARMUP_ITERATIONS);
+    for i in 0..WARMUP_ITERATIONS {
+        let (_, valid) = gpu_voxel.voxel_downsample(
+            &init_points, 
+            init_points.nrows(), 
+            VOXEL_SIZE,
+        ).expect("Voxel downsample failed");
+        println!("Warmup {}: {} output points", i + 1, valid);
     }
-    pq.queue().finish().context("Failed to finish the queue")?;
 
-    let t0 = Instant::now();
-    for _ in 0..ITERS {
-        unsafe { kernel.enq()?; }
+    println!("\n=== Benchmarking ({} iterations) ===", BENCHMARK_ITERATIONS);
+    let mut times = Vec::with_capacity(BENCHMARK_ITERATIONS);
+    let mut valid_count = 0;
+
+    for i in 0..BENCHMARK_ITERATIONS {
+        let t_start = Instant::now();
+        let (_, valid) = gpu_voxel.voxel_downsample(
+            &init_points, 
+            init_points.nrows(), 
+            VOXEL_SIZE,
+        ).expect("Voxel downsample failed");
+        let elapsed_ms = t_start.elapsed().as_secs_f64() * 1000.0;
+        
+        times.push(elapsed_ms);
+        valid_count = valid;
+        println!("Iteration {}: {:.3} ms", i + 1, elapsed_ms);
     }
-    pq.queue().finish()?; 
-    let elapsed = t0.elapsed();
 
-    buf_c.read(&mut c).enq()?;
-    pq.queue().finish()?;
+    // 統計情報
+    let sum: f64 = times.iter().sum();
+    let mean = sum / times.len() as f64;
     
-    let mut expected = 1.0f32;
-    for _ in 0..ITERS {
-        expected = 1e-3 + 0.999 * expected;
-    }
-    for i in 0..PRINT {
-        println!("c[{i}] = {}, expected ~ {}", c[i], expected);
-    }
+    let mut sorted = times.clone();
+    sorted.sort_by(|a, b| a.partial_cmp(b).unwrap());
+    let median = sorted[sorted.len() / 2];
+    let min = sorted[0];
+    let max = sorted[sorted.len() - 1];
 
-    let total_ops = (WORK_SIZE as f64) * (ITERS as f64) * 2.0;
-    let gflops = total_ops / elapsed.as_secs_f64() / 1e9;
-    println!("WORK_SIZE={}, ITERS={}, elapsed={:?}, ~{:.2} GFLOP/s", WORK_SIZE, ITERS, elapsed, gflops);
+    let variance: f64 = times.iter()
+        .map(|t| (t - mean).powi(2))
+        .sum::<f64>() / times.len() as f64;
+    let stddev = variance.sqrt();
 
+    println!("\n=== Benchmark Results ===");
+    println!("Input points:  {}", init_points.nrows());
+    println!("Output points: {}", valid_count);
+    println!("Voxel size:    {}", VOXEL_SIZE);
+    println!("\nTiming statistics (ms):");
+    println!("  Mean:   {:.3}", mean);
+    println!("  Median: {:.3}", median);
+    println!("  Min:    {:.3}", min);
+    println!("  Max:    {:.3}", max);
+    println!("  Stddev: {:.3}", stddev);
+    
+    Ok(())
+}
+
+fn pcd_to_array2(pcd_points: &[PointXYZT]) -> Array2<f32> {
+    let n = pcd_points.len();
+    let mut arr = Array2::<f32>::zeros((n, 3));
+    
+    for (i, pt) in pcd_points.iter().enumerate() {
+        arr[[i, 0]] = pt.x;
+        arr[[i, 1]] = pt.y;
+        arr[[i, 2]] = pt.z;
+    }
+    
+    arr
+}
+
+fn check_device_info() -> Result<()> {
+    for plat in Platform::list() {
+        println!("=== Platform: {} ===", plat.name()?);
+
+        let devices = Device::list_all(plat)?;
+        for dev in devices {
+            let name = dev.name()?;
+            let dtype = dev.info(DeviceInfo::Type)?.to_string();
+            let version = dev.version()?;
+
+            // 拡張一覧（長い文字列）
+            let exts = dev.info(DeviceInfo::Extensions)?.to_string();
+
+            let has_float_atomics = exts.split_whitespace().any(|e| e == "cl_ext_float_atomics");
+
+            println!("Device: {}", name);
+            println!("  Type: {}", dtype);
+            println!("  Version: {}", version);
+            println!("  cl_ext_float_atomics: {}", has_float_atomics);
+
+            // ついでに “似た名前” を含む拡張も拾いたい場合
+            let related: Vec<&str> = exts
+                .split_whitespace()
+                .filter(|e| e.contains("float") && e.contains("atomic"))
+                .collect();
+            if !related.is_empty() {
+                println!("  related: {:?}", related);
+            }
+            println!();
+        }
+    }
     Ok(())
 }
