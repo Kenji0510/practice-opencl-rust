@@ -3,7 +3,7 @@ use std::time::Instant;
 use anyhow::Result;
 use ndarray::Array2;
 use ocl::{Device, Platform, core::DeviceInfo};
-use practice_ocl::{gpu_voxel::OclVoxelContext, operate_pcd_file::{PointXYZT, load_pcd_xyzt}};
+use practice_ocl::{check_device::check_device_info, gpu_voxel::OclVoxelContext, operate_pcd_file::{PointXYZT, load_pcd_xyzt}};
 
 
 const VOXEL_SIZE: f32 = 0.5;
@@ -92,36 +92,36 @@ fn pcd_to_array2(pcd_points: &[PointXYZT]) -> Array2<f32> {
     arr
 }
 
-fn check_device_info() -> Result<()> {
-    for plat in Platform::list() {
-        println!("=== Platform: {} ===", plat.name()?);
+// fn check_device_info() -> Result<()> {
+//     for plat in Platform::list() {
+//         println!("=== Platform: {} ===", plat.name()?);
 
-        let devices = Device::list_all(plat)?;
-        for dev in devices {
-            let name = dev.name()?;
-            let dtype = dev.info(DeviceInfo::Type)?.to_string();
-            let version = dev.version()?;
+//         let devices = Device::list_all(plat)?;
+//         for dev in devices {
+//             let name = dev.name()?;
+//             let dtype = dev.info(DeviceInfo::Type)?.to_string();
+//             let version = dev.version()?;
 
-            // 拡張一覧（長い文字列）
-            let exts = dev.info(DeviceInfo::Extensions)?.to_string();
+//             // 拡張一覧（長い文字列）
+//             let exts = dev.info(DeviceInfo::Extensions)?.to_string();
 
-            let has_float_atomics = exts.split_whitespace().any(|e| e == "cl_ext_float_atomics");
+//             let has_float_atomics = exts.split_whitespace().any(|e| e == "cl_ext_float_atomics");
 
-            println!("Device: {}", name);
-            println!("  Type: {}", dtype);
-            println!("  Version: {}", version);
-            println!("  cl_ext_float_atomics: {}", has_float_atomics);
+//             println!("Device: {}", name);
+//             println!("  Type: {}", dtype);
+//             println!("  Version: {}", version);
+//             println!("  cl_ext_float_atomics: {}", has_float_atomics);
 
-            // ついでに “似た名前” を含む拡張も拾いたい場合
-            let related: Vec<&str> = exts
-                .split_whitespace()
-                .filter(|e| e.contains("float") && e.contains("atomic"))
-                .collect();
-            if !related.is_empty() {
-                println!("  related: {:?}", related);
-            }
-            println!();
-        }
-    }
-    Ok(())
-}
+//             // ついでに “似た名前” を含む拡張も拾いたい場合
+//             let related: Vec<&str> = exts
+//                 .split_whitespace()
+//                 .filter(|e| e.contains("float") && e.contains("atomic"))
+//                 .collect();
+//             if !related.is_empty() {
+//                 println!("  related: {:?}", related);
+//             }
+//             println!();
+//         }
+//     }
+//     Ok(())
+// }
