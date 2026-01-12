@@ -151,3 +151,44 @@ Timing statistics (ms):
   Max:    8.502
   Stddev: 0.025
 ```
+
+# Intel Xe GPU (Windows11)
+```bash
+=== Platform: Intel(R) OpenCL Graphics ===
+Device: Intel(R) Iris(R) Xe Graphics
+  Type: GPU
+  Version: 3.0
+  cl_ext_float_atomics: true
+  related: ["cl_ext_float_atomics"]
+
+Using OpenCL device: Intel(R) Corporation / Intel(R) Iris(R) Xe Graphics
+
+=== Warming up (3 iterations) ===
+Warmup 1: 153903 output points
+Warmup 2: 153903 output points
+Warmup 3: 153903 output points
+
+=== Benchmarking (10 iterations) ===
+Iteration 1: 118.045 ms
+Iteration 2: 119.147 ms
+Iteration 3: 118.338 ms
+Iteration 4: 118.203 ms
+Iteration 5: 118.306 ms
+Iteration 6: 117.806 ms
+Iteration 7: 117.593 ms
+Iteration 8: 117.734 ms
+Iteration 9: 118.553 ms
+Iteration 10: 117.958 ms
+
+=== Benchmark Results ===
+Input points:  1413157
+Output points: 153903
+Voxel size:    0.5
+
+Timing statistics (ms):
+  Mean:   118.168
+  Median: 118.203
+  Min:    117.593
+  Max:    119.147
+  Stddev: 0.432
+```

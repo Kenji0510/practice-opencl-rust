@@ -6,7 +6,7 @@
 #define P1 73856093UL
 #define P2 19349663UL
 #define P3 83492791UL
-#define SHARED_TABLE_SIZE 1024
+#define SHARED_TABLE_SIZE 1536
 #define SHARED_PROBE 32
 #define GLOBAL_PROBE 1000
 
@@ -62,7 +62,7 @@ inline void add_to_global(
     int table_idx = (int)(hash_key % (unsigned long)table_size);
 
     for (int i = 0; i < GLOBAL_PROBE; ++i) {
-        ulong old_key = atomic_cmpxchg(&table_keys[table_idx], EMPTY_KEY, (ulong)hash_key);
+        ulong old_key = cas_u64_global(&table_keys[table_idx], EMPTY_KEY, (ulong)hash_key);
 
         if (old_key == EMPTY_KEY || old_key == (ulong)hash_key) {
             atomic_add_float_global(&table_centroids[3 * table_idx + 0], px);
