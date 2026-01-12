@@ -1,9 +1,6 @@
+// OpenCL 1.2
 #pragma OPENCL EXTENSION cl_khr_int64_base_atomics : enable
 #pragma OPENCL EXTENSION cl_khr_int64_extended_atomics : enable
-
-#ifdef cl_ext_float_atomics
-    #pragma OPENCL EXTENSION cl_ext_float_atomics : enable
-#endif
 
 #define EMPTY_KEY 0xFFFFFFFFFFFFFFFFUL
 #define P1 73856093UL
@@ -13,32 +10,37 @@
 #define SHARED_PROBE 32
 #define GLOBAL_PROBE 1000
 
-inline void atomic_add_float_global(volatile __global float* addr, float val) {
-#if defined(cl_ext_float_atomics)
-    atomic_fetch_add(addr, val);
-#else
-    union { unsigned int u; float f; } current, next;
-    unsigned int expected;
-    do {
-        current.f = *addr;
-        expected = current.u;
-        next.f = current.f + val;
-    } while (atomic_cmpxchg((volatile __global unsigned int*)addr, expected, next.u) != expected);
-#endif
+inline void atomic_add_float_global(volatile __global float* addr_f, float val) {
+    volatile __global uint* addr_u = (volatile __global uint*)addr_f;
+    union { uint u; float f; } cur, next;
+
+    while (1) {
+        cur.u = *addr_u;
+        next.f = as_float(cur.u) + val;
+
+        uint prev = atomic_cmpxchg(addr_u, cur.u, as_uint(next.f));
+        if (prev == cur.u) break;
+    }
 }
 
-inline void atomic_add_float_local(volatile __local float* addr, float val) {
-#if defined(cl_ext_float_atomics)
-    atomic_fetch_add(addr, val);
-#else
-    union { unsigned int u; float f; } current, next;
-    unsigned int expected;
-    do {
-        current.f = *addr;
-        expected = current.u;
-        next.f = current.f + val;
-    } while (atomic_cmpxchg((volatile __local unsigned int*)addr, expected, next.u) != expected);
-#endif
+inline void atomic_add_float_local(volatile __local float* addr_f, float val) {
+    volatile __local uint* addr_u = (volatile __local uint*)addr_f;
+    union { uint u; float f; } cur, next;
+
+    while (1) {
+        cur.u = *addr_u;
+        next.f = as_float(cur.u) + val;
+        uint prev = atomic_cmpxchg(addr_u, cur.u, as_uint(next.f));
+        if (prev == cur.u) break;
+    }
+}
+
+inline ulong cas_u64_global(volatile __global ulong* p, ulong expected, ulong desired) {
+    return atom_cmpxchg(p, expected, desired);
+}
+
+inline ulong cas_u64_local(volatile __local ulong* p, ulong expected, ulong desired) {
+    return atom_cmpxchg(p, expected, desired);
 }
 
 inline unsigned long compute_voxel_hash(float px, float py, float pz, float voxel_size) {
@@ -116,7 +118,8 @@ __kernel void insert_points(
 
         int stored = 0;
         for (int probe = 0; probe < SHARED_PROBE; ++probe) {
-            ulong old = atomic_cmpxchg(&s_keys[s_idx], EMPTY_KEY, (ulong)hash_key);
+            // ulong old = atomic_cmpxchg(&s_keys[s_idx], EMPTY_KEY, (ulong)hash_key);
+            unsigned long old = cas_u64_local((volatile __local ulong*)&s_keys[s_idx], EMPTY_KEY, (ulong)hash_key);
 
             if (old == EMPTY_KEY || old == (ulong)hash_key) {
                 atomic_add_float_local(&s_centroids[s_idx * 3 + 0], px);
@@ -143,6 +146,7 @@ __kernel void insert_points(
             float sy = s_centroids[i * 3 + 1];
             float sz = s_centroids[i * 3 + 2];
             int sc = s_counts[i];
+            
             add_to_global((unsigned long)key, sx, sy, sz, sc, table_keys, table_centroids, table_counts, table_size);
         }
     }
