@@ -3,7 +3,7 @@ use std::time::Instant;
 use anyhow::Result;
 use ndarray::Array2;
 use ocl::{Device, Platform, core::DeviceInfo};
-use practice_ocl::{gpu_voxel::OclVoxelContext, operate_pcd_file::{PointXYZT, load_pcd_xyzt}};
+use practice_ocl::{gpu_cov::OclCovContext, gpu_voxel::OclVoxelContext, ocl_context::OclRuntime, operate_pcd_file::{PointXYZT, load_pcd_xyzt}};
 
 
 const VOXEL_SIZE: f32 = 0.5;
@@ -19,17 +19,31 @@ fn main() -> Result<()> {
 
     let init_points = pcd_to_array2(&init_pcd);
 
-    let mut gpu_voxel = OclVoxelContext::new()
+    println!("=== Initializing GPU context ===");
+    let ocl_runtime = OclRuntime::new()
+        .expect("Failed to create OclRuntime");
+    println!("Using Platform: {}", ocl_runtime.platform.name()?);
+    println!("Using Device:   {}", ocl_runtime.device.name()?);
+
+    let mut gpu_voxel = OclVoxelContext::new(ocl_runtime.clone())
         .expect("Failed to create OclVoxelContext");
+    let mut gpu_covs = OclCovContext::new(ocl_runtime.clone())
+        .expect("Failed to create OclCovContext");
+    println!("=== Completed GPU context ===");
 
     println!("\n=== Warming up ({} iterations) ===", WARMUP_ITERATIONS);
     for i in 0..WARMUP_ITERATIONS {
-        let (_, valid) = gpu_voxel.voxel_downsample(
+        let (d_v_points, valid) = gpu_voxel.voxel_downsample(
             &init_points, 
             init_points.nrows(), 
             VOXEL_SIZE,
         ).expect("Voxel downsample failed");
         println!("Warmup {}: {} output points", i + 1, valid);
+
+        let _ = gpu_covs.compute_covariances(
+            &d_v_points, 
+            valid
+        ).expect("Compute covariances failed");
     }
 
     println!("\n=== Benchmarking ({} iterations) ===", BENCHMARK_ITERATIONS);
@@ -37,14 +51,22 @@ fn main() -> Result<()> {
     let mut valid_count = 0;
 
     for i in 0..BENCHMARK_ITERATIONS {
-        let t_start = Instant::now();
-        let (_, valid) = gpu_voxel.voxel_downsample(
+        let start = Instant::now();
+        let (d_v_points, valid) = gpu_voxel.voxel_downsample(
             &init_points, 
             init_points.nrows(), 
             VOXEL_SIZE,
         ).expect("Voxel downsample failed");
-        let elapsed_ms = t_start.elapsed().as_secs_f64() * 1000.0;
-        
+        let elapsed_ms = start.elapsed().as_secs_f64() * 1000.0;
+        println!("Iteration {}: Voxelization: {:.3} ms", i + 1, elapsed_ms);
+
+        let _ = gpu_covs.compute_covariances(
+            &d_v_points, 
+            valid
+        ).expect("Compute covariances failed");
+        let elapsed_ms = start.elapsed().as_secs_f64() * 1000.0;
+        println!("Iteration {}: Covariance computation: {:.3} ms", i + 1, elapsed_ms);
+
         times.push(elapsed_ms);
         valid_count = valid;
         println!("Iteration {}: {:.3} ms", i + 1, elapsed_ms);

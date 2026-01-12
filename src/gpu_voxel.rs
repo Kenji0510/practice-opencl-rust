@@ -1,8 +1,10 @@
 use std::time::Instant;
 
 use ndarray::Array2;
-use ocl::{Buffer, Kernel, MemFlags, OclPrm, ProQue, Queue, flags};
+use ocl::{Buffer, Kernel, MemFlags, OclPrm, ProQue, Program, Queue, flags};
 use anyhow::{Result, Context};
+
+use crate::ocl_context::OclRuntime;
 
 
 const KERNEL_SRC: &str = include_str!("kernel/voxel.cl");
@@ -12,7 +14,8 @@ fn round_up(x: usize, multiple: usize) -> usize {
 }
 
 pub struct OclVoxelContext {
-    pq: ProQue,
+    rt: OclRuntime,
+    program: Program,
     kernel_init: Kernel,
     kernel_insert: Kernel,
     kernel_average: Kernel,
@@ -33,29 +36,29 @@ pub struct OclVoxelContext {
 }
 
 impl OclVoxelContext {
-    pub fn new() -> Result<Self> {
-        let pq = ProQue::builder()
+    pub fn new(rt: OclRuntime) -> Result<Self> {
+        let program = Program::builder()
             .src(KERNEL_SRC)
-            .dims(1)
-            .build()
-            .context("Build ProQue failed")?;
+            .devices(rt.device.clone())
+            .build(&rt.context)
+            .context("Program build failed")?;
 
         let dummy_u64 = Buffer::<u64>::builder()
-            .queue(pq.queue().clone())
+            .queue(rt.queue.clone())
             .flags(MemFlags::new().read_write())
             .len(1)
             .build()
             .context("Failed to create dummy_u64")?;
 
         let dummy_f32 = Buffer::<f32>::builder()
-            .queue(pq.queue().clone())
+            .queue(rt.queue.clone())
             .flags(MemFlags::new().read_write())
             .len(1)
             .build()
             .context("Failed to create dummy_f32")?;
 
         let dummy_i32 = Buffer::<i32>::builder()
-            .queue(pq.queue().clone())
+            .queue(rt.queue.clone())
             .flags(MemFlags::new().read_write())
             .len(1)
             .build()
@@ -64,9 +67,9 @@ impl OclVoxelContext {
         let lws = 256;
 
         let kernel_init = Kernel::builder()
-            .program(&pq.program())
+            .program(&program)
             .name("init_table")
-            .queue(pq.queue().clone())
+            .queue(rt.queue.clone())
             .global_work_size(1)
             .local_work_size(1)
             .arg(&dummy_u64) // table_keys
@@ -75,9 +78,9 @@ impl OclVoxelContext {
             .build()?;
 
         let kernel_insert = Kernel::builder()
-            .program(&pq.program())
+            .program(&program)
             .name("insert_points")
-            .queue(pq.queue().clone())
+            .queue(rt.queue.clone())
             .global_work_size(1)
             .local_work_size(1)
             .arg(&dummy_f32) // points
@@ -90,9 +93,9 @@ impl OclVoxelContext {
             .build()?;
 
         let kernel_average = Kernel::builder()
-            .program(&pq.program())
+            .program(&program)
             .name("average_table")
-            .queue(pq.queue().clone())
+            .queue(rt.queue.clone())
             .global_work_size(1)
             .local_work_size(1)
             .arg(&dummy_f32) // table_centroids
@@ -101,9 +104,9 @@ impl OclVoxelContext {
             .build()?;
 
         let kernel_compact = Kernel::builder()
-            .program(&pq.program())
+            .program(&program)
             .name("compact_voxels")
-            .queue(pq.queue().clone())
+            .queue(rt.queue.clone())
             .global_work_size(1)
             .local_work_size(1)
             .arg(&dummy_u64)  // table_keys
@@ -116,7 +119,8 @@ impl OclVoxelContext {
             .build()?;
 
         Ok(Self {
-            pq,
+            rt,
+            program,
             kernel_init,
             kernel_insert,
             kernel_average,
@@ -166,7 +170,7 @@ impl OclVoxelContext {
 
         let table_size = num_points * 2;
 
-        let queue = self.pq.queue().clone();
+        let queue = self.rt.queue.clone();
 
         Self::ensure_buffer(&queue, &mut self.buf_table_keys, table_size, MemFlags::new().read_write())?;
         Self::ensure_buffer(&queue, &mut self.buf_table_centroids, table_size * 3, MemFlags::new().read_write())?;
@@ -192,7 +196,7 @@ impl OclVoxelContext {
             let t_htod = Instant::now();
             d_input.write(&input_points.as_slice().unwrap()[..num_points * 3]).enq()
                 .context("Failed to write input points")?;
-            self.pq.queue().finish()?;
+            self.rt.queue.finish()?;
             let htod_ms = t_htod.elapsed().as_secs_f64() * 1000.0;
             d_counter.write(&[0i32][..]).enq()
                 .context("Failed to write valid count")?;
@@ -218,7 +222,7 @@ impl OclVoxelContext {
                 self.kernel_init.enq()
                     .context("Failed to run init_table kernel")?;
             }
-            // self.pq.queue().finish()?;
+            // self.rt.queue.finish()?;
             // let init_ms = t_init.elapsed().as_secs_f64() * 1000.0;
 
             // insert_points
@@ -234,7 +238,7 @@ impl OclVoxelContext {
             self.kernel_insert.set_arg(5, d_counts)?;
             self.kernel_insert.set_arg(6, &(table_size as i32))?;
             unsafe { self.kernel_insert.enq()?; }
-            // self.pq.queue().finish()?;
+            // self.rt.queue.finish()?;
             // let insert_ms = t_insert.elapsed().as_secs_f64() * 1000.0;
 
             // average_table
@@ -245,7 +249,7 @@ impl OclVoxelContext {
             self.kernel_average.set_arg(1, d_counts)?;
             self.kernel_average.set_arg(2, &(table_size as i32))?;
             unsafe { self.kernel_average.enq()?; }
-            // self.pq.queue().finish()?;
+            // self.rt.queue.finish()?;
             // let avg_ms = t_avg.elapsed().as_secs_f64() * 1000.0;
 
             // compact_voxels
@@ -261,7 +265,7 @@ impl OclVoxelContext {
             self.kernel_compact.set_arg(5, d_output)?;
             self.kernel_compact.set_arg(6, d_counter)?;
             unsafe { self.kernel_compact.enq()?; }
-            self.pq.queue().finish()?;
+            self.rt.queue.finish()?;
             // let elapsed_kernel = start.elapsed().as_secs_f64() * 1000.0;
 
             // DtoH転送
@@ -269,7 +273,7 @@ impl OclVoxelContext {
             let mut host_count = [0i32; 1];
             d_counter.read(host_count.as_mut_slice()).enq()
                 .context("Failed to read valid count")?;
-            self.pq.queue().finish()?;
+            self.rt.queue.finish()?;
             let dtoh_ms = t_dtoh.elapsed().as_secs_f64() * 1000.0;
 
             let valid_count = host_count[0].max(0) as usize;
