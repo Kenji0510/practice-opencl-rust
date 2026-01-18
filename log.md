@@ -122,3 +122,90 @@ Timing statistics (ms):
   Max:    46.150
   Stddev: 1.025
 ```
+
+# RTX 3050
+```bash
+=== Platform: NVIDIA CUDA ===
+Device: NVIDIA GeForce RTX 3050
+  Type: GPU
+  Version: 3.0
+  cl_ext_float_atomics: false
+
+=== Initializing GPU context ===
+Using Platform: NVIDIA CUDA
+Using Device:   NVIDIA GeForce RTX 3050
+=== Completed GPU context ===
+
+=== Warming up (3 iterations) ===
+Warmup 1: 153903 output points
+Warmup 2: 153903 output points
+Warmup 3: 153903 output points
+
+=== Benchmarking (10 iterations) ===
+Iteration 1: Voxelization: 8.817 ms
+Iteration 1: Covariance computation: 273.936 ms
+Iteration 1: 273.936 ms
+Iteration 2: Voxelization: 8.890 ms
+Iteration 2: Covariance computation: 270.821 ms
+Iteration 2: 270.821 ms
+Iteration 3: Voxelization: 8.910 ms
+Iteration 3: Covariance computation: 274.379 ms
+Iteration 3: 274.379 ms
+Iteration 4: Voxelization: 8.862 ms
+Iteration 4: Covariance computation: 274.592 ms
+Iteration 4: 274.592 ms
+Iteration 5: Voxelization: 8.876 ms
+Iteration 5: Covariance computation: 272.565 ms
+Iteration 5: 272.565 ms
+Iteration 6: Voxelization: 8.831 ms
+Iteration 6: Covariance computation: 273.855 ms
+Iteration 6: 273.855 ms
+Iteration 7: Voxelization: 8.848 ms
+Iteration 7: Covariance computation: 275.335 ms
+Iteration 7: 275.335 ms
+Iteration 8: Voxelization: 8.878 ms
+Iteration 8: Covariance computation: 273.335 ms
+Iteration 8: 273.335 ms
+Iteration 9: Voxelization: 8.879 ms
+Iteration 9: Covariance computation: 273.066 ms
+Iteration 9: 273.066 ms
+Iteration 10: Voxelization: 8.888 ms
+Iteration 10: Covariance computation: 272.648 ms
+Iteration 10: 272.648 ms
+
+=== Benchmark Results ===
+Input points:  1413157
+Output points: 153903
+Voxel size:    0.5
+
+Timing statistics (ms):
+  Mean:   273.453
+  Median: 273.855
+  Min:    270.821
+  Max:    275.335
+  Stddev: 1.209
+```
+
+```bash
+Mon Jan 12 19:02:12 2026       
++-----------------------------------------------------------------------------------------+
+| NVIDIA-SMI 580.95.05              Driver Version: 580.95.05      CUDA Version: 13.0     |
++-----------------------------------------+------------------------+----------------------+
+| GPU  Name                 Persistence-M | Bus-Id          Disp.A | Volatile Uncorr. ECC |
+| Fan  Temp   Perf          Pwr:Usage/Cap |           Memory-Usage | GPU-Util  Compute M. |
+|                                         |                        |               MIG M. |
+|=========================================+========================+======================|
+|   0  NVIDIA GeForce RTX 3050        Off |   00000000:01:00.0 Off |                  N/A |
+|100%   44C    P2             67W /   70W |     245MiB /   6144MiB |    100%      Default |
+|                                         |                        |                  N/A |
++-----------------------------------------+------------------------+----------------------+
+
++-----------------------------------------------------------------------------------------+
+| Processes:                                                                              |
+|  GPU   GI   CI              PID   Type   Process name                        GPU Memory |
+|        ID   ID                                                               Usage      |
+|=========================================================================================|
+|    0   N/A  N/A            1525      G   /usr/lib/xorg/Xorg                        4MiB |
+|    0   N/A  N/A            5190      C   target/release/practice-ocl             222MiB |
++-----------------------------------------------------------------------------------------+
+```
