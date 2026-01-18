@@ -192,3 +192,6 @@ Timing statistics (ms):
   Max:    119.147
   Stddev: 0.432
 ```
+
+Saving final global map with 668802 
+Final global map points after voxel downsampling: 671522

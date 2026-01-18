@@ -70,3 +70,8 @@ Timing statistics (ms):
   Max:    0.338
   Stddev: 0.010
 ```
+
+=== Benchmark Results ===
+Input points:  19968
+Output points: 2454
+Voxel size:    0.05

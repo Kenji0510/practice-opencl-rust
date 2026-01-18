@@ -10,6 +10,14 @@ pub struct PointXYZ {
 }
 
 #[derive(Debug, Clone, PcdDeserialize, PcdSerialize)]
+pub struct PointXYZRGB {
+    pub x: f32,
+    pub y: f32,
+    pub z: f32,
+    pub rgb: f32,
+}
+
+#[derive(Debug, Clone, PcdDeserialize, PcdSerialize)]
 pub struct PointXYZT {
     pub x: f32,
     pub y: f32,
@@ -71,6 +79,29 @@ pub fn load_pcd_xyzt(
     };
 
     let points: Vec<PointXYZT> = match reader.collect() {
+        Ok(p) => p,
+        Err(e) => {
+            eprintln!("Failed to read PCD data: {}", e);
+            return Err(anyhow::anyhow!("Failed to read PCD data: {}", e));
+        }
+    };
+
+    Ok(points)
+}
+
+
+pub fn load_pcd_xyzrgb(
+    file_path: &str,
+) -> Result<Vec<PointXYZRGB>> {
+    let reader = match Reader::open(file_path) {
+        Ok(r) => r,
+        Err(e) => {
+            eprintln!("Failed to open PCD file: {}", e);
+            return Err(anyhow::anyhow!("Failed to open PCD file: {}", e));
+        }
+    };
+
+    let points: Vec<PointXYZRGB> = match reader.collect() {
         Ok(p) => p,
         Err(e) => {
             eprintln!("Failed to read PCD data: {}", e);

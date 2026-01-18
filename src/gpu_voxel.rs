@@ -7,8 +7,8 @@ use anyhow::{Result, Context};
 use crate::ocl_context::OclRuntime;
 
 
-// const KERNEL_SRC: &str = include_str!("kernel/voxel.cl");
-const KERNEL_SRC: &str = include_str!("kernel/voxel_debug.cl");
+const KERNEL_SRC: &str = include_str!("kernel/voxel.cl");
+// const KERNEL_SRC: &str = include_str!("kernel/voxel_debug.cl");
 
 fn round_up(x: usize, multiple: usize) -> usize {
     if x % multiple == 0 { x } else { (x / multiple + 1) * multiple }
@@ -74,9 +74,11 @@ impl OclVoxelContext {
             .global_work_size(1)
             .local_work_size(1)
             .arg(&dummy_u64) // table_keys
+            .arg(&dummy_f32) // table_centroids
+            .arg(&dummy_i32) // table_counts
             .arg(&dummy_i32) // table_remap
             .arg(0i32)        // table_size
-            .arg(&dummy_i32)        // dropped_count
+
             .build()?;
 
         let kernel_insert = Kernel::builder()
@@ -92,7 +94,6 @@ impl OclVoxelContext {
             .arg(&dummy_f32)  // table_centroids
             .arg(&dummy_i32)  // table_counts
             .arg(0i32)        // table_size
-            .arg(&dummy_i32)        // dropped_count
             .build()?;
 
         let kernel_average = Kernel::builder()
@@ -182,12 +183,6 @@ impl OclVoxelContext {
         Self::ensure_buffer(&queue, &mut self.buf_input_points,    num_points * 3, MemFlags::new().read_only())?;
         Self::ensure_buffer(&queue, &mut self.buf_out_points,      num_points * 3, MemFlags::new().read_write())?;
         Self::ensure_buffer(&queue, &mut self.buf_valid_count,     1,              MemFlags::new().read_write())?;
-        let mut dropped_count_buf = Buffer::<i32>::builder()
-            .queue(queue.clone())
-            .flags(MemFlags::new().read_write())
-            .len(1)
-            .build()
-            .context("Failed to create dropped_count_buf")?;
 
         self.table_size = table_size;
         self.voxel_size = voxel_size;
@@ -200,8 +195,8 @@ impl OclVoxelContext {
             let d_input = self.buf_input_points.as_ref().unwrap();
             let d_output = self.buf_out_points.as_ref().unwrap();
             let d_counter = self.buf_valid_count.as_ref().unwrap();
-            let d_dropped = &dropped_count_buf;
-            // HtoD転送
+
+            // HtoD
             let t_htod = Instant::now();
             d_input.write(&input_points.as_slice().unwrap()[..num_points * 3]).enq()
                 .context("Failed to write input points")?;
@@ -213,8 +208,6 @@ impl OclVoxelContext {
                 .context("Failed to fill centroids")?;
             d_counts.cmd().fill(0i32, None).enq()
                 .context("Failed to fill counts")?;
-            d_dropped.write(&[0i32][..]).enq()
-                .context("Failed to write dropped count")?;
 
             let gws_table = round_up(table_size, self.lws);
             let gws_pts = round_up(num_points, self.lws);
@@ -226,9 +219,11 @@ impl OclVoxelContext {
             // let start = Instant::now();
             // let t_init = Instant::now();
             self.kernel_init.set_arg(0, d_keys)?;
-            self.kernel_init.set_arg(1, d_remap)?;
-            self.kernel_init.set_arg(2, table_size as i32)?;
-            self.kernel_init.set_arg(3, d_dropped)?;
+            self.kernel_init.set_arg(1, d_centroids)?;
+            self.kernel_init.set_arg(2, d_counts)?;
+            self.kernel_init.set_arg(3, d_remap)?;
+            self.kernel_init.set_arg(4, table_size as i32)?;
+            
             unsafe {
                 self.kernel_init.enq()
                     .context("Failed to run init_table kernel")?;
@@ -248,7 +243,6 @@ impl OclVoxelContext {
             self.kernel_insert.set_arg(4, d_centroids)?;
             self.kernel_insert.set_arg(5, d_counts)?;
             self.kernel_insert.set_arg(6, &(table_size as i32))?;
-            self.kernel_insert.set_arg(7, d_dropped)?;
             unsafe { self.kernel_insert.enq()?; }
             // self.rt.queue.finish()?;
             // let insert_ms = t_insert.elapsed().as_secs_f64() * 1000.0;
@@ -289,12 +283,6 @@ impl OclVoxelContext {
             let dtoh_ms = t_dtoh.elapsed().as_secs_f64() * 1000.0;
 
             let valid_count = host_count[0].max(0) as usize;
-
-            let mut dropped = [0i32; 1];
-            dropped_count_buf.read(&mut dropped[..]).enq()
-                .context("Failed to read dropped count")?;
-            self.rt.queue.finish()?;
-            println!("Dropped points due to hash table overflow: {}", dropped[0]);
 
             // 結果出力
             // println!("=== GPU Voxel Downsample Timing ===");

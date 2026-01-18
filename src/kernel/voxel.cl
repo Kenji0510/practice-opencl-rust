@@ -3,12 +3,25 @@
 #pragma OPENCL EXTENSION cl_khr_int64_extended_atomics : enable
 
 #define EMPTY_KEY 0xFFFFFFFFFFFFFFFFUL
-#define P1 73856093UL
-#define P2 19349663UL
-#define P3 83492791UL
+#define VOX_BITS 21
+#define VOX_MASK ((1UL << VOX_BITS) - 1UL)
+#define VOX_OFFSET (1UL << (VOX_BITS - 1))
 #define SHARED_TABLE_SIZE 1536
 #define SHARED_PROBE 32
 #define GLOBAL_PROBE 1000
+
+
+inline ulong make_voxel_key_b21(float px, float py, float pz, float voxel_size) {
+    int vx = (int)floor(px / voxel_size);
+    int vy = (int)floor(py / voxel_size);
+    int vz = (int)floor(pz / voxel_size);
+
+    ulong ux = (ulong)(vx + VOX_OFFSET) & VOX_MASK;
+    ulong uy = (ulong)(vy + VOX_OFFSET) & VOX_MASK;
+    ulong uz = (ulong)(vz + VOX_OFFSET) & VOX_MASK;
+
+    return (ux) | (uy << VOX_BITS) | (uz << (2 * VOX_BITS)); // 0..(2^63-1)
+}
 
 inline void atomic_add_float_global(volatile __global float* addr_f, float val) {
     volatile __global uint* addr_u = (volatile __global uint*)addr_f;
@@ -43,15 +56,15 @@ inline ulong cas_u64_local(volatile __local ulong* p, ulong expected, ulong desi
     return atom_cmpxchg(p, expected, desired);
 }
 
-inline unsigned long compute_voxel_hash(float px, float py, float pz, float voxel_size) {
-    int vx = (int)floor(px / voxel_size);
-    int vy = (int)floor(py / voxel_size);
-    int vz = (int)floor(pz / voxel_size);
-    return ((unsigned long)vx * P1) ^ ((unsigned long)vy * P2) ^ ((unsigned long)vz * P3);
-}
+// inline unsigned long compute_voxel_hash(float px, float py, float pz, float voxel_size) {
+//     int vx = (int)floor(px / voxel_size);
+//     int vy = (int)floor(py / voxel_size);
+//     int vz = (int)floor(pz / voxel_size);
+//     return ((unsigned long)vx * P1) ^ ((unsigned long)vy * P2) ^ ((unsigned long)vz * P3);
+// }
 
 inline void add_to_global(
-    unsigned long hash_key,
+    unsigned long voxel_key,
     float px, float py, float pz,
     int count,
     volatile __global ulong* table_keys,
@@ -59,12 +72,12 @@ inline void add_to_global(
     volatile __global int* table_counts,
     int table_size
 ){
-    int table_idx = (int)(hash_key % (unsigned long)table_size);
+    int table_idx = (int)(voxel_key % (unsigned long)table_size);
 
     for (int i = 0; i < GLOBAL_PROBE; ++i) {
-        ulong old_key = cas_u64_global(&table_keys[table_idx], EMPTY_KEY, (ulong)hash_key);
+        ulong old_key = cas_u64_global(&table_keys[table_idx], EMPTY_KEY, (ulong)voxel_key);
 
-        if (old_key == EMPTY_KEY || old_key == (ulong)hash_key) {
+        if (old_key == EMPTY_KEY || old_key == (ulong)voxel_key) {
             atomic_add_float_global(&table_centroids[3 * table_idx + 0], px);
             atomic_add_float_global(&table_centroids[3 * table_idx + 1], py);
             atomic_add_float_global(&table_centroids[3 * table_idx + 2], pz);
@@ -75,10 +88,20 @@ inline void add_to_global(
     }
 }
 
-__kernel void init_table(__global ulong* table_keys, __global int* table_remap, int table_size) {
+__kernel void init_table(
+    __global ulong* table_keys,
+    __global float* table_centroids,
+    __global int* table_counts,
+    __global int* table_remap,
+    int table_size
+){
     int idx = get_global_id(0);
     if (idx >= table_size) return;
     table_keys[idx] = EMPTY_KEY;
+    table_centroids[idx*3+0] = 0.0f;
+    table_centroids[idx*3+1] = 0.0f;
+    table_centroids[idx*3+2] = 0.0f;
+    table_counts[idx] = 0;
     table_remap[idx] = -1;
 }
 
@@ -113,7 +136,7 @@ __kernel void insert_points(
         float py = points[idx * 3 + 1];
         float pz = points[idx * 3 + 2];
 
-        unsigned long hash_key = compute_voxel_hash(px, py, pz, voxel_size);
+        unsigned long hash_key = make_voxel_key_b21(px, py, pz, voxel_size);
         int s_idx = (int)(hash_key % (unsigned long)SHARED_TABLE_SIZE);
 
         int stored = 0;
