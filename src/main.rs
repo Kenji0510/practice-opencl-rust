@@ -35,7 +35,7 @@ fn main() -> Result<()> {
         .expect("Failed to create OclSearchContext");
     println!("=== Completed GPU context ===");
 
-    println!("\n=== Warming up ({} iterations) ===", WARMUP_ITERATIONS);
+    println!("\n=== Warning up ({} iterations) ===", WARMUP_ITERATIONS);
     for i in 0..WARMUP_ITERATIONS {
         let (d_v_points, valid) = gpu_voxel.voxel_downsample(
             &init_points, 
