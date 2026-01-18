@@ -3,20 +3,20 @@ use std::time::Instant;
 use anyhow::Result;
 use ndarray::Array2;
 use ocl::{Device, Platform, core::DeviceInfo};
-use practice_ocl::{gpu_cov::OclCovContext, gpu_voxel::OclVoxelContext, ocl_context::OclRuntime, operate_pcd_file::{PointXYZ, PointXYZT, load_pcd_xyz, load_pcd_xyzt}};
+use practice_ocl::{gpu_cov::OclCovContext, gpu_search::OclSearchContext, gpu_voxel::OclVoxelContext, ocl_context::OclRuntime, operate_pcd_file::{PointXYZ, PointXYZT, load_pcd_xyz, load_pcd_xyzt}};
 
 
-const VOXEL_SIZE: f32 = 0.5;
+const VOXEL_SIZE: f32 = 0.05;
 const WARMUP_ITERATIONS: usize = 3;
 const BENCHMARK_ITERATIONS: usize = 10;
 
 fn main() -> Result<()> {
     check_device_info()?;
 
-    // let pcd_path = "data/input/frame_898.pcd";
-    let pcd_path = "data/input/mid360-pointcloud2-bag-outside-station-to-campus.pcd";
-    // let init_pcd = load_pcd_xyzt(pcd_path)
-    let init_pcd = load_pcd_xyz(pcd_path)
+    let pcd_path = "data/input/frame_898.pcd";
+    // let pcd_path = "data/input/mid360-pointcloud2-bag-outside-station-to-campus.pcd";
+    let init_pcd = load_pcd_xyzt(pcd_path)
+    // let init_pcd = load_pcd_xyz(pcd_path)
         .expect("Failed to load initial PCD file");
 
     let init_points = pcd_to_array2(&init_pcd);
@@ -31,6 +31,8 @@ fn main() -> Result<()> {
         .expect("Failed to create OclVoxelContext");
     let mut gpu_covs = OclCovContext::new(ocl_runtime.clone())
         .expect("Failed to create OclCovContext");
+    let mut gpu_search = OclSearchContext::new(ocl_runtime.clone())
+        .expect("Failed to create OclSearchContext");
     println!("=== Completed GPU context ===");
 
     println!("\n=== Warming up ({} iterations) ===", WARMUP_ITERATIONS);
@@ -54,7 +56,7 @@ fn main() -> Result<()> {
 
     for i in 0..BENCHMARK_ITERATIONS {
         let start = Instant::now();
-        let (d_v_points, valid) = gpu_voxel.voxel_downsample(
+        let (d_v_points, v_source_count) = gpu_voxel.voxel_downsample(
             &init_points, 
             init_points.nrows(), 
             VOXEL_SIZE,
@@ -64,13 +66,22 @@ fn main() -> Result<()> {
 
         let _ = gpu_covs.compute_covariances(
             &d_v_points, 
-            valid
+            v_source_count
         ).expect("Compute covariances failed");
         let elapsed_ms = start.elapsed().as_secs_f64() * 1000.0;
         println!("Iteration {}: Covariance computation: {:.3} ms", i + 1, elapsed_ms);
 
+        let (_, _, _, _) = gpu_search.compute_find_nearest_neighbor(
+            &d_v_points,
+            v_source_count,
+            VOXEL_SIZE,
+            &gpu_voxel,
+        ).expect("Nearest neighbor search failed");
+        let elapsed_ms = start.elapsed().as_secs_f64() * 1000.0;
+        println!("Iteration {}: Nearest neighbor search: {:.3} ms", i + 1, elapsed_ms);
+
         times.push(elapsed_ms);
-        valid_count = valid;
+        valid_count = v_source_count;
         println!("Iteration {}: {:.3} ms", i + 1, elapsed_ms);
     }
 
@@ -103,8 +114,8 @@ fn main() -> Result<()> {
     Ok(())
 }
 
-// fn pcd_to_array2(pcd_points: &[PointXYZT]) -> Array2<f32> {
-fn pcd_to_array2(pcd_points: &[PointXYZ]) -> Array2<f32> {
+fn pcd_to_array2(pcd_points: &[PointXYZT]) -> Array2<f32> {
+// fn pcd_to_array2(pcd_points: &[PointXYZ]) -> Array2<f32> {
     let n = pcd_points.len();
     let mut arr = Array2::<f32>::zeros((n, 3));
     
