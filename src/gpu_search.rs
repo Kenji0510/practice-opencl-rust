@@ -5,7 +5,7 @@ use crate::{gpu_voxel::OclVoxelContext, ocl_context::OclRuntime};
 
 
 
-const KERNEL_SRC: &str = include_str!("kernel/search.cl");
+const KERNEL_SRC: &str = include_str!("kernels/search.cl");
 
 fn round_up(x: usize, multiple: usize) -> usize {
     if x % multiple == 0 { x } else { (x / multiple + 1) * multiple }
@@ -68,7 +68,7 @@ impl OclSearchContext {
             .build()
             .context("Failed to set the kernel")?;
 
-        Ok( Self {
+        Ok(Self {
             rt,
             program,
             kernel_func,

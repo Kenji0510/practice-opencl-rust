@@ -4,7 +4,7 @@ use ocl::{Buffer, Kernel, MemFlags, OclPrm, ProQue, Program, Queue};
 use crate::ocl_context::OclRuntime;
 
 
-const KERNEL_SRC: &str = include_str!("kernel/compute_covariance.cl");
+const KERNEL_SRC: &str = include_str!("kernels/compute_covariance.cl");
 
 fn round_up(x: usize, multiple: usize) -> usize {
     if x % multiple == 0 { x } else { (x / multiple + 1) * multiple }

@@ -7,8 +7,8 @@ use anyhow::{Result, Context};
 use crate::ocl_context::OclRuntime;
 
 
-// const KERNEL_SRC: &str = include_str!("kernel/voxel.cl");
-const KERNEL_SRC: &str = include_str!("kernel/voxel_debug.cl");
+// const KERNEL_SRC: &str = include_str!("kernels/voxel.cl");
+const KERNEL_SRC: &str = include_str!("kernels/voxel_debug.cl");
 
 fn round_up(x: usize, multiple: usize) -> usize {
     if x % multiple == 0 { x } else { (x / multiple + 1) * multiple }

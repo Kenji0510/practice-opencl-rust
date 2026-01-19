@@ -3,10 +3,10 @@ use std::time::Instant;
 use anyhow::Result;
 use ndarray::Array2;
 use ocl::{Device, Platform, core::DeviceInfo};
-use practice_ocl::{gpu_cov::OclCovContext, gpu_search::OclSearchContext, gpu_voxel::OclVoxelContext, ocl_context::OclRuntime, operate_pcd_file::{PointXYZ, PointXYZT, load_pcd_xyz, load_pcd_xyzt}};
+use practice_ocl::{gpu_cov::OclCovContext, gpu_search::OclSearchContext, gpu_transform::OclTransformContext, gpu_voxel::OclVoxelContext, ocl_context::OclRuntime, operate_pcd_file::{PointXYZ, PointXYZT, load_pcd_xyz, load_pcd_xyzt}};
 
 
-const VOXEL_SIZE: f32 = 0.05;
+const VOXEL_SIZE: f32 = 0.5;
 const WARMUP_ITERATIONS: usize = 3;
 const BENCHMARK_ITERATIONS: usize = 10;
 
@@ -33,6 +33,8 @@ fn main() -> Result<()> {
         .expect("Failed to create OclCovContext");
     let mut gpu_search = OclSearchContext::new(ocl_runtime.clone())
         .expect("Failed to create OclSearchContext");
+    let mut gpu_transform = OclTransformContext::new(ocl_runtime.clone())
+        .expect("Failed to create OclTransformContext");
     println!("=== Completed GPU context ===");
 
     println!("\n=== Warning up ({} iterations) ===", WARMUP_ITERATIONS);
@@ -56,6 +58,7 @@ fn main() -> Result<()> {
 
     for i in 0..BENCHMARK_ITERATIONS {
         let start = Instant::now();
+        // Voxelization
         let (d_v_points, v_source_count) = gpu_voxel.voxel_downsample(
             &init_points, 
             init_points.nrows(), 
@@ -64,13 +67,15 @@ fn main() -> Result<()> {
         let elapsed_ms = start.elapsed().as_secs_f64() * 1000.0;
         println!("Iteration {}: Voxelization: {:.3} ms", i + 1, elapsed_ms);
 
-        let _ = gpu_covs.compute_covariances(
+        // Covariance computation
+        let d_covs = gpu_covs.compute_covariances(
             &d_v_points, 
             v_source_count
         ).expect("Compute covariances failed");
         let elapsed_ms = start.elapsed().as_secs_f64() * 1000.0;
         println!("Iteration {}: Covariance computation: {:.3} ms", i + 1, elapsed_ms);
 
+        // Nearest neighbor search
         let (_, _, _, _) = gpu_search.compute_find_nearest_neighbor(
             &d_v_points,
             v_source_count,
@@ -79,6 +84,17 @@ fn main() -> Result<()> {
         ).expect("Nearest neighbor search failed");
         let elapsed_ms = start.elapsed().as_secs_f64() * 1000.0;
         println!("Iteration {}: Nearest neighbor search: {:.3} ms", i + 1, elapsed_ms);
+
+        // Transform points
+        let identity_transform = Array2::<f32>::eye(4);
+        let (_d_transformed_points, _d_transformed_covs) = gpu_transform.apply_transform(
+            &d_v_points,
+            &d_covs,
+            v_source_count,
+            &identity_transform,
+        ).expect("Apply transform failed");
+        let elapsed_ms = start.elapsed().as_secs_f64() * 1000.0;
+        println!("Iteration {}: Transform points: {:.3} ms", i + 1, elapsed_ms);
 
         times.push(elapsed_ms);
         valid_count = v_source_count;
