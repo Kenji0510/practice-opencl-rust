@@ -24,6 +24,7 @@ impl OclCovContext {
         let program = Program::builder()
             .src(KERNEL_SRC)
             .devices(rt.device.clone())
+            .cmplr_opt("-cl-mad-enable -cl-fast-relaxed-math -cl-no-signed-zeros")
             .build(&rt.context)
             .context("Program build failed")?;
 

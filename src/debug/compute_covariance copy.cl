@@ -2,6 +2,22 @@
 
 #define K 12
 
+inline void jacobi_cs(float app, float aqq, float apq, float *c, float *s)
+{
+    // apq = A[p][q]
+    float tau = (aqq - app) / (2.0f * apq);
+
+    // t = sign(tau) / (|tau| + sqrt(1 + tau^2))
+    float abs_tau = fabs(tau);
+    float t = copysign(1.0f, tau) / (abs_tau + sqrt(1.0f + tau * tau));
+
+    // c = 1/sqrt(1+t^2), s = t*c
+    float inv = rsqrt(1.0f + t * t);
+    *c = inv;
+    *s = t * inv;
+}
+
+
 inline void eigen_decomposition_3x3(
     float A[3][3],
     float evecs[3][3],
@@ -35,9 +51,11 @@ inline void eigen_decomposition_3x3(
         float aqq = A[q][q];
         float apq = A[p][q];
 
-        float phi = 0.5f * atan2(2.0f * apq, aqq - app);
-        float c = cos(phi);
-        float s = sin(phi);
+        // float phi = 0.5f * atan2(2.0f * apq, aqq - app);
+        // float c = cos(phi);
+        // float s = sin(phi);
+        float c, s;
+        jacobi_cs(app, aqq, apq, &c, &s);
 
         A[p][p] = c*c*app - 2.0f*s*c*apq + s*s*aqq;
         A[q][q] = s*s*app + 2.0f*s*c*apq + c*c*aqq;
@@ -68,20 +86,6 @@ inline void eigen_decomposition_3x3(
     evals[2] = A[2][2];
 }
 
-inline void recompute_max_k(
-    __private float* dists,
-    float* dmax, int* imax)
-{
-    float dm = dists[0];
-    int im = 0;
-    for (int t = 1; t < K; ++t) {
-        float v = dists[t];
-        if (v > dm) { dm = v; im = t; }
-    }
-    *dmax = dm;
-    *imax = im;
-}
-
 __kernel void compute_covariance(
     __global const float* restrict points,
     const int num_points,
@@ -103,11 +107,6 @@ __kernel void compute_covariance(
         neighbor_dists[i] = FLT_MAX;
     }
 
-    float dmax = neighbor_dists[0];
-    int imax = 0;
-
-    recompute_max_k(neighbor_dists, &dmax, &imax);
-
     for (int j = 0; j < num_points; ++j) {
         if (j == idx) continue;
 
@@ -120,11 +119,15 @@ __kernel void compute_covariance(
         const float dz = pz - tz;
         const float d2 = dx*dx + dy*dy + dz*dz;
 
-        if (d2 < dmax) {
-            neighbor_dists[imax] = d2;
-            neighbor_indices[imax] = j;
-
-            recompute_max_k(neighbor_dists, &dmax, &imax);
+        if (d2 < neighbor_dists[K - 1]) {
+            int insert_pos = K - 1;
+            while (insert_pos > 0 && d2 < neighbor_dists[insert_pos - 1]) {
+                neighbor_dists[insert_pos] = neighbor_dists[insert_pos - 1];
+                neighbor_indices[insert_pos] = neighbor_indices[insert_pos - 1];
+                insert_pos--;
+            }
+            neighbor_dists[insert_pos] = d2;
+            neighbor_indices[insert_pos] = j;
         }
     }
 

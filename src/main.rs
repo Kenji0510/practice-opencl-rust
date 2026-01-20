@@ -57,17 +57,18 @@ fn main() -> Result<()> {
     let mut valid_count = 0;
 
     for i in 0..BENCHMARK_ITERATIONS {
-        let start = Instant::now();
+        let init_start = Instant::now();
         // Voxelization
         let (d_v_points, v_source_count) = gpu_voxel.voxel_downsample(
             &init_points, 
             init_points.nrows(), 
             VOXEL_SIZE,
         ).expect("Voxel downsample failed");
-        let elapsed_ms = start.elapsed().as_secs_f64() * 1000.0;
+        let elapsed_ms = init_start.elapsed().as_secs_f64() * 1000.0;
         println!("Iteration {}: Voxelization: {:.3} ms", i + 1, elapsed_ms);
 
         // Covariance computation
+        let start = Instant::now();
         let d_covs = gpu_covs.compute_covariances(
             &d_v_points, 
             v_source_count
@@ -76,6 +77,7 @@ fn main() -> Result<()> {
         println!("Iteration {}: Covariance computation: {:.3} ms", i + 1, elapsed_ms);
 
         // Nearest neighbor search
+        let start = Instant::now();
         let (_, _, _, _) = gpu_search.compute_find_nearest_neighbor(
             &d_v_points,
             v_source_count,
@@ -86,6 +88,7 @@ fn main() -> Result<()> {
         println!("Iteration {}: Nearest neighbor search: {:.3} ms", i + 1, elapsed_ms);
 
         // Transform points
+        let start = Instant::now();
         let identity_transform = Array2::<f32>::eye(4);
         let (_d_transformed_points, _d_transformed_covs) = gpu_transform.apply_transform(
             &d_v_points,
@@ -96,6 +99,7 @@ fn main() -> Result<()> {
         let elapsed_ms = start.elapsed().as_secs_f64() * 1000.0;
         println!("Iteration {}: Transform points: {:.3} ms", i + 1, elapsed_ms);
 
+        let elapsed_ms = init_start.elapsed().as_secs_f64() * 1000.0;
         times.push(elapsed_ms);
         valid_count = v_source_count;
         println!("Iteration {}: {:.3} ms", i + 1, elapsed_ms);
