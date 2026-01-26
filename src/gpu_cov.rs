@@ -3,11 +3,14 @@ use ocl::{Buffer, Kernel, MemFlags, OclPrm, ProQue, Program, Queue};
 
 use crate::ocl_context::OclRuntime;
 
-
 const KERNEL_SRC: &str = include_str!("kernels/compute_covariance.cl");
 
 fn round_up(x: usize, multiple: usize) -> usize {
-    if x % multiple == 0 { x } else { (x / multiple + 1) * multiple }
+    if x % multiple == 0 {
+        x
+    } else {
+        (x / multiple + 1) * multiple
+    }
 }
 
 pub struct OclCovContext {
@@ -42,7 +45,7 @@ impl OclCovContext {
             .global_work_size(1)
             .local_work_size(1)
             .arg(&dummy_f32) // points
-            .arg(0)         // num_points
+            .arg(0) // num_points
             .arg(&dummy_f32) // out_covariances
             .build()?;
 
@@ -64,12 +67,13 @@ impl OclCovContext {
         let cur = buf.as_ref().map(|b| b.len()).unwrap_or(0);
         if cur < len_needed {
             let new_len = ((len_needed as f32) * 1.2).ceil() as usize;
-            *buf = Some(Buffer::<T>::builder()
-                .queue(queue.clone())
-                .flags(flags)
-                .len(new_len)
-                .build()
-                .context("Failed to create buffer")?
+            *buf = Some(
+                Buffer::<T>::builder()
+                    .queue(queue.clone())
+                    .flags(flags)
+                    .len(new_len)
+                    .build()
+                    .context("Failed to create buffer")?,
             );
         }
         Ok(())
@@ -86,8 +90,13 @@ impl OclCovContext {
 
         let q = self.rt.queue.clone();
 
-        Self::ensure_buffer(&q, &mut self.buf_covs, num_points * 9, MemFlags::new().read_write())
-            .context("Failed to ensure covariance buffer")?;
+        Self::ensure_buffer(
+            &q,
+            &mut self.buf_covs,
+            num_points * 9,
+            MemFlags::new().read_write(),
+        )
+        .context("Failed to ensure covariance buffer")?;
 
         let d_covs = self.buf_covs.as_ref().unwrap();
 
@@ -114,7 +123,7 @@ impl OclCovContext {
         }
 
         q.finish().context("Failed to finish queue")?;
-        
+
         Ok(d_covs.clone())
     }
 }

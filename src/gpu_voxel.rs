@@ -1,16 +1,19 @@
 use std::time::Instant;
 
+use anyhow::{Context, Result};
 use ndarray::Array2;
 use ocl::{Buffer, Kernel, MemFlags, OclPrm, ProQue, Program, Queue, flags};
-use anyhow::{Result, Context};
 
 use crate::ocl_context::OclRuntime;
-
 
 const KERNEL_SRC: &str = include_str!("kernels/voxel.cl");
 
 fn round_up(x: usize, multiple: usize) -> usize {
-    if x % multiple == 0 { x } else { (x / multiple + 1) * multiple }
+    if x % multiple == 0 {
+        x
+    } else {
+        (x / multiple + 1) * multiple
+    }
 }
 
 pub struct OclVoxelContext {
@@ -74,7 +77,7 @@ impl OclVoxelContext {
             .local_work_size(1)
             .arg(&dummy_u64) // table_keys
             .arg(&dummy_i32) // table_remap
-            .arg(0i32)        // table_size
+            .arg(0i32) // table_size
             .build()?;
 
         let kernel_insert = Kernel::builder()
@@ -84,12 +87,12 @@ impl OclVoxelContext {
             .global_work_size(1)
             .local_work_size(1)
             .arg(&dummy_f32) // points
-            .arg(0i32)        // num_points
-            .arg(0.0f32)      // voxel_size
-            .arg(&dummy_u64)  // table_keys
-            .arg(&dummy_f32)  // table_centroids
-            .arg(&dummy_i32)  // table_counts
-            .arg(0i32)        // table_size
+            .arg(0i32) // num_points
+            .arg(0.0f32) // voxel_size
+            .arg(&dummy_u64) // table_keys
+            .arg(&dummy_f32) // table_centroids
+            .arg(&dummy_i32) // table_counts
+            .arg(0i32) // table_size
             .build()?;
 
         let kernel_average = Kernel::builder()
@@ -100,7 +103,7 @@ impl OclVoxelContext {
             .local_work_size(1)
             .arg(&dummy_f32) // table_centroids
             .arg(&dummy_i32) // table_counts
-            .arg(0i32)        // table_size
+            .arg(0i32) // table_size
             .build()?;
 
         let kernel_compact = Kernel::builder()
@@ -109,13 +112,13 @@ impl OclVoxelContext {
             .queue(rt.queue.clone())
             .global_work_size(1)
             .local_work_size(1)
-            .arg(&dummy_u64)  // table_keys
-            .arg(&dummy_f32)  // table_centroids
-            .arg(&dummy_i32)  // table_counts
-            .arg(&dummy_i32)  // table_remap
-            .arg(0i32)         // table_size
-            .arg(&dummy_f32)  // out_points
-            .arg(&dummy_i32)  // out_count
+            .arg(&dummy_u64) // table_keys
+            .arg(&dummy_f32) // table_centroids
+            .arg(&dummy_i32) // table_counts
+            .arg(&dummy_i32) // table_remap
+            .arg(0i32) // table_size
+            .arg(&dummy_f32) // out_points
+            .arg(&dummy_i32) // out_count
             .build()?;
 
         Ok(Self {
@@ -147,12 +150,13 @@ impl OclVoxelContext {
         let cur = buf.as_ref().map(|b| b.len()).unwrap_or(0);
         if cur < len_needed {
             let new_len = ((len_needed as f32) * 1.2).ceil() as usize;
-            *buf = Some(Buffer::<T>::builder()
-                .queue(queue.clone())
-                .flags(flags)
-                .len(new_len)
-                .build()
-                .context("Failed to create buffer")?
+            *buf = Some(
+                Buffer::<T>::builder()
+                    .queue(queue.clone())
+                    .flags(flags)
+                    .len(new_len)
+                    .build()
+                    .context("Failed to create buffer")?,
             );
         }
         Ok(())
@@ -172,13 +176,48 @@ impl OclVoxelContext {
 
         let queue = self.rt.queue.clone();
 
-        Self::ensure_buffer(&queue, &mut self.buf_table_keys, table_size, MemFlags::new().read_write())?;
-        Self::ensure_buffer(&queue, &mut self.buf_table_centroids, table_size * 3, MemFlags::new().read_write())?;
-        Self::ensure_buffer(&queue, &mut self.buf_table_counts,    table_size,     MemFlags::new().read_write())?;
-        Self::ensure_buffer(&queue, &mut self.buf_table_remap,     table_size,     MemFlags::new().read_write())?;
-        Self::ensure_buffer(&queue, &mut self.buf_input_points,    num_points * 3, MemFlags::new().read_only())?;
-        Self::ensure_buffer(&queue, &mut self.buf_out_points,      num_points * 3, MemFlags::new().read_write())?;
-        Self::ensure_buffer(&queue, &mut self.buf_valid_count,     1,              MemFlags::new().read_write())?;
+        Self::ensure_buffer(
+            &queue,
+            &mut self.buf_table_keys,
+            table_size,
+            MemFlags::new().read_write(),
+        )?;
+        Self::ensure_buffer(
+            &queue,
+            &mut self.buf_table_centroids,
+            table_size * 3,
+            MemFlags::new().read_write(),
+        )?;
+        Self::ensure_buffer(
+            &queue,
+            &mut self.buf_table_counts,
+            table_size,
+            MemFlags::new().read_write(),
+        )?;
+        Self::ensure_buffer(
+            &queue,
+            &mut self.buf_table_remap,
+            table_size,
+            MemFlags::new().read_write(),
+        )?;
+        Self::ensure_buffer(
+            &queue,
+            &mut self.buf_input_points,
+            num_points * 3,
+            MemFlags::new().read_only(),
+        )?;
+        Self::ensure_buffer(
+            &queue,
+            &mut self.buf_out_points,
+            num_points * 3,
+            MemFlags::new().read_write(),
+        )?;
+        Self::ensure_buffer(
+            &queue,
+            &mut self.buf_valid_count,
+            1,
+            MemFlags::new().read_write(),
+        )?;
 
         self.table_size = table_size;
         self.voxel_size = voxel_size;
@@ -194,23 +233,34 @@ impl OclVoxelContext {
 
             // HtoD転送
             let t_htod = Instant::now();
-            d_input.write(&input_points.as_slice().unwrap()[..num_points * 3]).enq()
+            d_input
+                .write(&input_points.as_slice().unwrap()[..num_points * 3])
+                .enq()
                 .context("Failed to write input points")?;
             self.rt.queue.finish()?;
             let htod_ms = t_htod.elapsed().as_secs_f64() * 1000.0;
-            d_counter.write(&[0i32][..]).enq()
+            d_counter
+                .write(&[0i32][..])
+                .enq()
                 .context("Failed to write valid count")?;
-            d_centroids.cmd().fill(0.0f32, None).enq()
+            d_centroids
+                .cmd()
+                .fill(0.0f32, None)
+                .enq()
                 .context("Failed to fill centroids")?;
-            d_counts.cmd().fill(0i32, None).enq()
+            d_counts
+                .cmd()
+                .fill(0i32, None)
+                .enq()
                 .context("Failed to fill counts")?;
-            
 
             let gws_table = round_up(table_size, self.lws);
             let gws_pts = round_up(num_points, self.lws);
 
-            self.kernel_init.set_default_global_work_size(ocl::SpatialDims::One(gws_table));
-            self.kernel_init.set_default_local_work_size(ocl::SpatialDims::One(self.lws));
+            self.kernel_init
+                .set_default_global_work_size(ocl::SpatialDims::One(gws_table));
+            self.kernel_init
+                .set_default_local_work_size(ocl::SpatialDims::One(self.lws));
 
             // init_table
             // let start = Instant::now();
@@ -219,7 +269,8 @@ impl OclVoxelContext {
             self.kernel_init.set_arg(1, d_remap)?;
             self.kernel_init.set_arg(2, table_size as i32)?;
             unsafe {
-                self.kernel_init.enq()
+                self.kernel_init
+                    .enq()
                     .context("Failed to run init_table kernel")?;
             }
             // self.rt.queue.finish()?;
@@ -227,8 +278,10 @@ impl OclVoxelContext {
 
             // insert_points
             // let t_insert = Instant::now();
-            self.kernel_insert.set_default_global_work_size(ocl::SpatialDims::One(gws_pts));
-            self.kernel_insert.set_default_local_work_size(ocl::SpatialDims::One(self.lws));
+            self.kernel_insert
+                .set_default_global_work_size(ocl::SpatialDims::One(gws_pts));
+            self.kernel_insert
+                .set_default_local_work_size(ocl::SpatialDims::One(self.lws));
 
             self.kernel_insert.set_arg(0, d_input)?;
             self.kernel_insert.set_arg(1, &(num_points as i32))?;
@@ -237,25 +290,33 @@ impl OclVoxelContext {
             self.kernel_insert.set_arg(4, d_centroids)?;
             self.kernel_insert.set_arg(5, d_counts)?;
             self.kernel_insert.set_arg(6, &(table_size as i32))?;
-            unsafe { self.kernel_insert.enq()?; }
+            unsafe {
+                self.kernel_insert.enq()?;
+            }
             // self.rt.queue.finish()?;
             // let insert_ms = t_insert.elapsed().as_secs_f64() * 1000.0;
 
             // average_table
             // let t_avg = Instant::now();
-            self.kernel_average.set_default_global_work_size(ocl::SpatialDims::One(gws_table));
-            self.kernel_average.set_default_local_work_size(ocl::SpatialDims::One(self.lws));
+            self.kernel_average
+                .set_default_global_work_size(ocl::SpatialDims::One(gws_table));
+            self.kernel_average
+                .set_default_local_work_size(ocl::SpatialDims::One(self.lws));
             self.kernel_average.set_arg(0, d_centroids)?;
             self.kernel_average.set_arg(1, d_counts)?;
             self.kernel_average.set_arg(2, &(table_size as i32))?;
-            unsafe { self.kernel_average.enq()?; }
+            unsafe {
+                self.kernel_average.enq()?;
+            }
             // self.rt.queue.finish()?;
             // let avg_ms = t_avg.elapsed().as_secs_f64() * 1000.0;
 
             // compact_voxels
             // let t_compact = Instant::now();
-            self.kernel_compact.set_default_global_work_size(ocl::SpatialDims::One(gws_table));
-            self.kernel_compact.set_default_local_work_size(ocl::SpatialDims::One(self.lws));
+            self.kernel_compact
+                .set_default_global_work_size(ocl::SpatialDims::One(gws_table));
+            self.kernel_compact
+                .set_default_local_work_size(ocl::SpatialDims::One(self.lws));
 
             self.kernel_compact.set_arg(0, d_keys)?;
             self.kernel_compact.set_arg(1, d_centroids)?;
@@ -264,14 +325,18 @@ impl OclVoxelContext {
             self.kernel_compact.set_arg(4, &(table_size as i32))?;
             self.kernel_compact.set_arg(5, d_output)?;
             self.kernel_compact.set_arg(6, d_counter)?;
-            unsafe { self.kernel_compact.enq()?; }
+            unsafe {
+                self.kernel_compact.enq()?;
+            }
             self.rt.queue.finish()?;
             // let elapsed_kernel = start.elapsed().as_secs_f64() * 1000.0;
 
             // DtoH
             let t_dtoh = Instant::now();
             let mut host_count = [0i32; 1];
-            d_counter.read(host_count.as_mut_slice()).enq()
+            d_counter
+                .read(host_count.as_mut_slice())
+                .enq()
                 .context("Failed to read valid count")?;
             self.rt.queue.finish()?;
             let dtoh_ms = t_dtoh.elapsed().as_secs_f64() * 1000.0;

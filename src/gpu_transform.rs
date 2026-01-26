@@ -4,12 +4,14 @@ use ocl::{Buffer, Kernel, MemFlags, OclPrm, Program, Queue};
 
 use crate::ocl_context::OclRuntime;
 
-
-
 const KERNEL_SRC: &str = include_str!("kernels/transform.cl");
 
 fn round_up(x: usize, multiple: usize) -> usize {
-    if x % multiple == 0 { x } else { (x / multiple + 1) * multiple }
+    if x % multiple == 0 {
+        x
+    } else {
+        (x / multiple + 1) * multiple
+    }
 }
 
 pub struct OclTransformContext {
@@ -44,7 +46,7 @@ impl OclTransformContext {
             .local_work_size(1)
             .arg(&dummy_f32) // pts
             .arg(&dummy_f32) // covs
-            .arg(0)         // num_points
+            .arg(0) // num_points
             .arg(0.0f32) // r00
             .arg(0.0f32) // r01
             .arg(0.0f32) // r02
@@ -80,12 +82,13 @@ impl OclTransformContext {
         let cur = buf.as_ref().map(|b| b.len()).unwrap_or(0);
         if cur < len_needed {
             let new_len = ((len_needed as f32) * 1.2).ceil() as usize;
-            *buf = Some(Buffer::<T>::builder()
-                .queue(queue.clone())
-                .flags(flags)
-                .len(new_len)
-                .build()
-                .context("Failed to create buffer")?
+            *buf = Some(
+                Buffer::<T>::builder()
+                    .queue(queue.clone())
+                    .flags(flags)
+                    .len(new_len)
+                    .build()
+                    .context("Failed to create buffer")?,
             );
         }
         Ok(())
@@ -99,8 +102,18 @@ impl OclTransformContext {
         transform: &Array2<f32>,
     ) -> Result<(Buffer<f32>, Buffer<f32>)> {
         let q = self.rt.queue.clone();
-        Self::ensure_buffer(&q, &mut self.buf_out_pts, num_points, MemFlags::new().read_write())?;
-        Self::ensure_buffer(&q, &mut self.buf_out_covs, num_points * 9, MemFlags::new().read_write())?;
+        Self::ensure_buffer(
+            &q,
+            &mut self.buf_out_pts,
+            num_points,
+            MemFlags::new().read_write(),
+        )?;
+        Self::ensure_buffer(
+            &q,
+            &mut self.buf_out_covs,
+            num_points * 9,
+            MemFlags::new().read_write(),
+        )?;
 
         let d_out_pts = self.buf_out_pts.as_ref().unwrap();
         let d_out_covs = self.buf_out_covs.as_ref().unwrap();

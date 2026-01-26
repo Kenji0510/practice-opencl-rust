@@ -1,6 +1,5 @@
-use pcd_rs::{PcdDeserialize, PcdSerialize, Reader};
 use anyhow::Result;
-
+use pcd_rs::{PcdDeserialize, PcdSerialize, Reader};
 
 #[derive(Debug, Clone, PcdDeserialize, PcdSerialize)]
 pub struct PointXYZ {
@@ -17,10 +16,7 @@ pub struct PointXYZT {
     pub timestamp: f64,
 }
 
-pub fn save_pcd_xyzt(
-    points: &[PointXYZT],
-    file_path: &str,
-) -> Result<()> {
+pub fn save_pcd_xyzt(points: &[PointXYZT], file_path: &str) -> Result<()> {
     let mut writer = pcd_rs::WriterInit {
         width: 1,
         height: points.len() as u64,
@@ -29,7 +25,7 @@ pub fn save_pcd_xyzt(
         schema: None,
     }
     .create(file_path)?;
-    
+
     for point in points {
         writer.push(point)?;
     }
@@ -38,10 +34,7 @@ pub fn save_pcd_xyzt(
     Ok(())
 }
 
-pub fn save_pcd_xyz(
-    points: &[PointXYZ],
-    file_path: &str,
-) -> Result<()> {
+pub fn save_pcd_xyz(points: &[PointXYZ], file_path: &str) -> Result<()> {
     let mut writer = pcd_rs::WriterInit {
         width: 1,
         height: points.len() as u64,
@@ -50,7 +43,7 @@ pub fn save_pcd_xyz(
         schema: None,
     }
     .create(file_path)?;
-    
+
     for point in points {
         writer.push(point)?;
     }
@@ -59,9 +52,7 @@ pub fn save_pcd_xyz(
     Ok(())
 }
 
-pub fn load_pcd_xyzt(
-    file_path: &str,
-) -> Result<Vec<PointXYZT>> {
+pub fn load_pcd_xyzt(file_path: &str) -> Result<Vec<PointXYZT>> {
     let reader = match Reader::open(file_path) {
         Ok(r) => r,
         Err(e) => {
@@ -81,9 +72,7 @@ pub fn load_pcd_xyzt(
     Ok(points)
 }
 
-pub fn load_pcd_xyz(
-    file_path: &str,
-) -> Result<Vec<PointXYZ>> {
+pub fn load_pcd_xyz(file_path: &str) -> Result<Vec<PointXYZ>> {
     let reader = match Reader::open(file_path) {
         Ok(r) => r,
         Err(e) => {

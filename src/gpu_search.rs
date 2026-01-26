@@ -3,12 +3,14 @@ use ocl::{Buffer, Kernel, MemFlags, OclPrm, Program, Queue};
 
 use crate::{gpu_voxel::OclVoxelContext, ocl_context::OclRuntime};
 
-
-
 const KERNEL_SRC: &str = include_str!("kernels/search.cl");
 
 fn round_up(x: usize, multiple: usize) -> usize {
-    if x % multiple == 0 { x } else { (x / multiple + 1) * multiple }
+    if x % multiple == 0 {
+        x
+    } else {
+        (x / multiple + 1) * multiple
+    }
 }
 
 pub struct OclSearchContext {
@@ -56,8 +58,8 @@ impl OclSearchContext {
             .global_work_size(1)
             .local_work_size(1)
             .arg(&dummy_f32) // Source points
-            .arg(0)         // num_source_points
-            .arg(0.0f32)    // Voxel size
+            .arg(0) // num_source_points
+            .arg(0.0f32) // Voxel size
             .arg(&dummy_u64) // Target points
             .arg(&dummy_f32) // Target centroids
             .arg(&dummy_i32) // Target_counts
@@ -86,12 +88,13 @@ impl OclSearchContext {
         let cur = buf.as_ref().map(|b| b.len()).unwrap_or(0);
         if cur < len_needed {
             let new_len = ((len_needed as f32) * 1.2).ceil() as usize;
-            *buf = Some(Buffer::<T>::builder()
-                .queue(queue.clone())
-                .flags(flags)
-                .len(new_len)
-                .build()
-                .context("Failed to create buffer")?
+            *buf = Some(
+                Buffer::<T>::builder()
+                    .queue(queue.clone())
+                    .flags(flags)
+                    .len(new_len)
+                    .build()
+                    .context("Failed to create buffer")?,
             );
         }
         Ok(())
@@ -109,25 +112,43 @@ impl OclSearchContext {
         }
 
         let q = self.rt.queue.clone();
-        Self::ensure_buffer(&q, &mut self.buf_indices, num_source, MemFlags::new().read_write())?;
-        Self::ensure_buffer(&q, &mut self.buf_dists, num_source, MemFlags::new().read_write())?;
+        Self::ensure_buffer(
+            &q,
+            &mut self.buf_indices,
+            num_source,
+            MemFlags::new().read_write(),
+        )?;
+        Self::ensure_buffer(
+            &q,
+            &mut self.buf_dists,
+            num_source,
+            MemFlags::new().read_write(),
+        )?;
 
-        let d_table_keys = target_voxel_ctx.buf_table_keys.as_ref()
+        let d_table_keys = target_voxel_ctx
+            .buf_table_keys
+            .as_ref()
             .context("Target voxel context table keys buffer is None")?;
-        let d_table_centroids = target_voxel_ctx.buf_table_centroids.as_ref()
+        let d_table_centroids = target_voxel_ctx
+            .buf_table_centroids
+            .as_ref()
             .context("Target voxel context table centroids buffer is None")?;
-        let d_table_counts = target_voxel_ctx.buf_table_counts.as_ref()
+        let d_table_counts = target_voxel_ctx
+            .buf_table_counts
+            .as_ref()
             .context("Target voxel context table counts buffer is None")?;
-        let d_table_remap = target_voxel_ctx.buf_table_remap.as_ref()
+        let d_table_remap = target_voxel_ctx
+            .buf_table_remap
+            .as_ref()
             .context("Target voxel context table remap buffer is None")?;
         let table_size = target_voxel_ctx.table_size as i32;
-        
+
         let d_indices = self.buf_indices.as_mut().unwrap();
         let d_dists = self.buf_dists.as_mut().unwrap();
 
         let lws = 256 as usize;
         let gws = round_up(num_source, lws);
-        
+
         self.kernel_func
             .set_arg(0, source_pts)
             .context("Failed to set source_pts arg")?;
@@ -175,9 +196,13 @@ impl OclSearchContext {
 
         let mut indices = vec![0i32; num_source];
         let mut dists = vec![0.0f32; num_source];
-        d_indices.read(&mut indices).enq()
+        d_indices
+            .read(&mut indices)
+            .enq()
             .context("Failed to read indices")?;
-        d_dists.read(&mut dists).enq()
+        d_dists
+            .read(&mut dists)
+            .enq()
             .context("Failed to read distances")?;
         q.finish().context("Failed to finish queue")?;
 
