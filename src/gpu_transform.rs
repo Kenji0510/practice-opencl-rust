@@ -105,7 +105,7 @@ impl OclTransformContext {
         Self::ensure_buffer(
             &q,
             &mut self.buf_out_pts,
-            num_points,
+            num_points * 3,
             MemFlags::new().read_write(),
         )?;
         Self::ensure_buffer(
