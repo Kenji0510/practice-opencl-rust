@@ -166,7 +166,7 @@ fn main() -> Result<()> {
         ).context("Failed to convert device to host")?;
 
         let (d_adjusted_pts, _ ) = gpu_transform
-            .apply_transform(&d_transformed_points, &d_transformed_covs, v_source_count, &adjusted_transform)
+            .apply_transform(&d_transformed_points, &d_transformed_covs, v_source_count, &delta_t)
             .expect("Apply adjusted transform failed");
 
         let adjusted_pts = convert_dtoh(
