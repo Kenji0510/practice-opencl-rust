@@ -153,7 +153,7 @@ impl OclSearchContext {
             .set_arg(0, source_pts)
             .context("Failed to set source_pts arg")?;
         self.kernel_func
-            .set_arg(1, num_source as u32)
+            .set_arg(1, num_source as i32)
             .context("Failed to set num_source_points arg")?;
         self.kernel_func
             .set_arg(2, voxel_size)

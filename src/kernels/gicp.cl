@@ -62,7 +62,7 @@ __kernel void compute_gicp_linear_system(
     __global const float* restrict d_src_covs,  // num_source * 9
     __global const float* restrict d_tgt_pts,  // num_target * 3
     __global const float* restrict d_tgt_covs,  // num_target * 9
-    __global const float* restrict d_indices,  // num_source
+    __global const int* restrict d_indices,  // num_source
     __global const float* restrict d_dists_sq,  // num_source
     const int num_source,
     const int num_target,

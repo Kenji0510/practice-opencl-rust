@@ -58,7 +58,7 @@ impl OclGicpContext {
             .arg(&dummy_f32) // num_source * 9
             .arg(&dummy_f32) // num_target * 3
             .arg(&dummy_f32) // num_target * 9
-            .arg(&dummy_f32) // source_indices
+            .arg(&dummy_i32) // source_indices
             .arg(&dummy_f32) // source_dists_sq
             .arg(0) // num_source
             .arg(0) // num_target
